@@ -91,6 +91,128 @@ wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/sh
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs)" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 sudo apt update && sudo apt install -y terraform packer git 
 ```
+## **Reading the username and passwrod from Secret Manager Just an Example**
+---
+✅ Step 1: Create Secret in AWS UI (one-time)
+
+Go to AWS Secrets Manager
+
+Steps:
+Click “Store a new secret”
+Select “Other type of secret”
+Add key-value pairs:
+username → admin
+password → MySecurePassword123
+Click Next
+
+Secret name:
+
+rds/dev/credentials
+Keep defaults → Create
+✅ Step 2: Terraform file (rds.tf)
+
+Here is a complete working example
+
+provider "aws" {
+  region = "ap-south-1"
+}
+
+############################
+# Fetch Secret
+############################
+data "aws_secretsmanager_secret" "rds" {
+  name = "rds/dev/credentials"
+}
+
+data "aws_secretsmanager_secret_version" "rds" {
+  secret_id = data.aws_secretsmanager_secret.rds.id
+}
+
+############################
+# Decode Secret
+############################
+locals {
+  rds_creds = jsondecode(data.aws_secretsmanager_secret_version.rds.secret_string)
+}
+
+############################
+# DB Subnet Group
+############################
+resource "aws_db_subnet_group" "db_subnet_group" {
+  name       = "db-subnet-group"
+  subnet_ids = var.subnet_ids
+
+  tags = {
+    Name = "db-subnet-group"
+  }
+}
+
+############################
+# RDS Instance
+############################
+resource "aws_db_instance" "rds" {
+  identifier = "my-rds-instance"
+
+  engine         = "mysql"
+  instance_class = "db.t3.micro"
+
+  allocated_storage = 20
+
+  username = local.rds_creds.username
+  password = local.rds_creds.password
+
+  db_subnet_group_name = aws_db_subnet_group.db_subnet_group.name
+
+  skip_final_snapshot = true
+
+  publicly_accessible = false
+}
+✅ Step 3: variables.tf
+variable "subnet_ids" {
+  description = "Private subnet IDs for RDS"
+  type        = list(string)
+}
+✅ Step 4: terraform.tfvars
+subnet_ids = [
+  "subnet-abc123",
+  "subnet-def456",
+  "subnet-ghi789"
+]
+🔐 IAM Permission Required
+
+Your Terraform execution role/user must have:
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "secretsmanager:GetSecretValue"
+  ],
+  "Resource": "*"
+}
+⚠️ Important Notes
+Secret must be in JSON format
+Terraform will still store values in state
+Use:
+S3 backend (encrypted)
+DynamoDB lock
+💡 Better (Production Approach)
+
+Instead of passing password manually:
+
+manage_master_user_password = true
+
+AWS will:
+
+Auto-create secret
+Auto-rotate password
+No manual handling needed
+🚀 Simple Flow
+Create secret in AWS UI
+Terraform fetches it
+Decode JSON
+Pass to RDS
+--
+
 
 ## AWS CLI Installation
 
