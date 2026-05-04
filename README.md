@@ -167,11 +167,13 @@ resource "aws_db_instance" "rds" {
 
   publicly_accessible = false
 }
+
 ✅ Step 3: variables.tf
 variable "subnet_ids" {
   description = "Private subnet IDs for RDS"
   type        = list(string)
 }
+
 ✅ Step 4: terraform.tfvars
 subnet_ids = [
   "subnet-abc123",
